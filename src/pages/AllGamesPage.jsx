@@ -110,52 +110,135 @@ const AllGamesPage = () => {
     const navigate = useNavigate();
     const { isAuthenticated, user } = useAuth();
 
+    const categorizeGames = useCallback((gamesList, currentUserId) => {
+        if (!gamesList || !Array.isArray(gamesList)) {
+            console.warn("categorizeGames received invalid gamesList:", gamesList);
+            return {
+                myOpenGames: [],
+                openGames: [],
+                myActiveGames: [],
+                myCompletedGames: [],
+                otherGames: [],
+                publicActiveGames: [],
+                publicCompletedGames: []
+            };
+        }
+
+        const categorized = {
+            myOpenGames: [],
+            openGames: [],      // Open for others
+            myActiveGames: [],
+            myCompletedGames: [],
+            otherGames: [],     // Other people's active/completed games
+            publicActiveGames: [],
+            publicCompletedGames: []
+        };
+
+        console.log(`[CategorizeGames] Starting. Current User ID: ${currentUserId}. Games to process: ${gamesList.length}`);
+
+        for (const game of gamesList) {
+            if (!game || typeof game !== 'object' || !game.status || !game.player1 || typeof game.player1 !== 'object' || !game.player1._id) {
+                console.warn("[CategorizeGames] Skipping invalid game object due to missing essential properties:", game);
+                continue;
+            }
+
+            console.log(`[CategorizeGames] Processing game ID: ${game._id}, Status: ${game.status}, P1_ID: ${game.player1._id}, P2_ID: ${game.player2?._id ?? 'N/A'}`);
+
+            const isP1Me = game.player1._id === currentUserId;
+            const isP2Me = game.player2?._id === currentUserId; // Optional chaining for player2._id
+            const isMyGame = isP1Me || isP2Me;
+
+            if (currentUserId) { // User is logged in
+                console.log(`[CategorizeGames] User is logged in. Game ID: ${game._id}, isP1Me: ${isP1Me}, isP2Me: ${isP2Me}, isMyGame: ${isMyGame}`);
+                if (game.status === 'Open') {
+                    if (isP1Me && !game.player2?._id) { // My open game (I am P1, P2 not present or P2 ID missing)
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as myOpenGames.`);
+                        categorized.myOpenGames.push(game);
+                    } else if (game.player1._id !== currentUserId && !game.player2?._id) { // Open for others (P1 is not me, P2 not present)
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as openGames.`);
+                        categorized.openGames.push(game);
+                    } else {
+                         console.log(`[CategorizeGames] Game ID: ${game._id} (Status: Open) did not fit 'myOpenGames' or 'openGames' for logged-in user.`);
+                    }
+                } else if (game.status === 'Active') {
+                    if (isMyGame) {
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as myActiveGames.`);
+                        categorized.myActiveGames.push(game);
+                    } else if (game.player2?._id) { // Active game, not mine, and P2 exists (implies it's an ongoing game between others)
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as otherGames (Active).`);
+                        categorized.otherGames.push(game);
+                    } else {
+                        console.log(`[CategorizeGames] Game ID: ${game._id} (Status: Active) did not fit 'myActiveGames' or 'otherGames' for logged-in user.`);
+                    }
+                } else if (game.status === 'Completed') {
+                    if (isMyGame) {
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as myCompletedGames.`);
+                        categorized.myCompletedGames.push(game);
+                    } else if (game.player2?._id) { // Completed game, not mine, and P2 exists
+                        console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as otherGames (Completed).`);
+                        categorized.otherGames.push(game);
+                    } else {
+                         console.log(`[CategorizeGames] Game ID: ${game._id} (Status: Completed) did not fit 'myCompletedGames' or 'otherGames' for logged-in user.`);
+                    }
+                } else {
+                    console.log(`[CategorizeGames] Game ID: ${game._id} has unhandled status: ${game.status} for logged-in user.`);
+                }
+            } else { // User is not logged in
+                console.log(`[CategorizeGames] User is not logged in. Processing game ID: ${game._id}`);
+                if (game.status === 'Active' && game.player1?._id && game.player2?._id) {
+                    console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as publicActiveGames.`);
+                    categorized.publicActiveGames.push(game);
+                } else if (game.status === 'Completed' && game.player1?._id && game.player2?._id) {
+                    console.log(`[CategorizeGames] Game ID: ${game._id} categorizing as publicCompletedGames.`);
+                    categorized.publicCompletedGames.push(game);
+                } else {
+                    console.log(`[CategorizeGames] Game ID: ${game._id} (Status: ${game.status}) did not fit public categories for anonymous user.`);
+                }
+            }
+        }
+        console.log("[CategorizeGames] Final categorized object:", JSON.parse(JSON.stringify(categorized))); // Deep copy for logging to avoid issues with mutable objects
+        return categorized;
+    }, []);
+
     const fetchGames = useCallback(async () => {
         setIsLoading(true);
         setError(null);
 
         try {
-            if (isAuthenticated && user) {
-                // 已登录用户 - 获取分类游戏
-                const [openGames, myOpenGames, myActiveGames, myCompletedGames, otherGames] = await Promise.all([
-                    getAllGamesAPI({ type: 'open_for_others' }),
-                    getAllGamesAPI({ type: 'my_open' }),
-                    getAllGamesAPI({ type: 'my_active' }),
-                    getAllGamesAPI({ type: 'my_completed' }),
-                    getAllGamesAPI({ type: 'other_games' })
-                ]);
-                setGames({
-                    openGames: openGames || [],
-                    myOpenGames: myOpenGames || [],
-                    myActiveGames: myActiveGames || [],
-                    myCompletedGames: myCompletedGames || [],
-                    otherGames: otherGames || [],
-                    activeGames: [],
-                    completedGames: []
-                });
-            } else {
-                // 未登录用户 - 获取公开游戏
-                const [activeGames, completedGames] = await Promise.all([
-                    getAllGamesAPI({ status_filter: 'Active' }),
-                    getAllGamesAPI({ status_filter: 'Completed' })
-                ]);
-                setGames({
-                    openGames: [],
-                    myOpenGames: [],
-                    myActiveGames: [],
-                    myCompletedGames: [],
-                    otherGames: [],
-                    activeGames: activeGames || [],
-                    completedGames: completedGames || []
-                });
-            }
+            // 1. Fetch all games with a single API call
+            console.log("[FetchGames] Attempting to fetch all games from API...");
+            const allGamesList = await getAllGamesAPI(); // Assuming this now fetches all relevant games
+            console.log(`[FetchGames] Received ${allGamesList ? allGamesList.length : 0} games from API.`);
+
+            // 2. Get currentUserId (can be null if not authenticated)
+            const currentUserId = isAuthenticated && user ? user.id : null;
+            console.log(`[FetchGames] Current user ID for categorization: ${currentUserId}`);
+            
+            // 3. Use the categorizeGames function to process the list
+            // Ensure categorizeGames is included in the dependency array of this useCallback
+            const categorizedReturn = categorizeGames(allGamesList || [], currentUserId);
+            
+            console.log("[FetchGames] Games after categorization:", JSON.parse(JSON.stringify(categorizedReturn)));
+
+            // 4. Set the state using the categorized lists
+            setGames({
+                openGames: categorizedReturn.openGames || [],
+                myOpenGames: categorizedReturn.myOpenGames || [],
+                myActiveGames: categorizedReturn.myActiveGames || [],
+                myCompletedGames: categorizedReturn.myCompletedGames || [],
+                otherGames: categorizedReturn.otherGames || [],
+                activeGames: categorizedReturn.publicActiveGames || [], // Used for anonymous view
+                completedGames: categorizedReturn.publicCompletedGames || [] // Used for anonymous view
+            });
+
         } catch (err) {
-            console.error("Failed to fetch games:", err);
+            console.error("[FetchGames] Failed to fetch or process games:", err);
             setError(err.response?.data?.msg || err.message || "Failed to load games.");
         } finally {
             setIsLoading(false);
+            console.log("[FetchGames] Finished fetching and processing games.");
         }
-    }, [isAuthenticated, user]);
+    }, [isAuthenticated, user, categorizeGames]); // Added categorizeGames as a dependency
 
     useEffect(() => {
         fetchGames();
@@ -167,16 +250,39 @@ const AllGamesPage = () => {
             navigate("/login", { state: { from: '/games' } });
             return;
         }
-        navigate(`/ship-placement?mode=join&gameId=${gameId}`);
+        // Navigate to ship placement page for joining, pass gameId
+        navigate(`/ship-placement/${gameId}`);
     };
 
     const handleCreateGame = () => {
-        if (!isAuthenticated) {
+        console.log("[AllGamesPage] Attempting to create a new game...");
+        if (!isAuthenticated || !user) {
+            console.log("[AllGamesPage] Create game attempt by unauthenticated user.");
             alert("Please login to create a game.");
-            navigate("/login", { state: { from: '/ship-placement?mode=create' } });
+            navigate("/login", { state: { from: '/games' } });
             return;
         }
-        navigate('/ship-placement?mode=create');
+
+        // Check for existing open or active games for the current user
+        const hasMyOpenGames = games.myOpenGames && games.myOpenGames.length > 0;
+        const hasMyActiveGames = games.myActiveGames && games.myActiveGames.length > 0;
+
+        if (hasMyOpenGames || hasMyActiveGames) {
+            console.log(`[AllGamesPage] Create game denied. User has existing games. MyOpen: ${hasMyOpenGames}, MyActive: ${hasMyActiveGames}`);
+            let message = "You already have ";
+            if (hasMyOpenGames && hasMyActiveGames) {
+                message += "an open game and an active game.";
+            } else if (hasMyOpenGames) {
+                message += "an open game waiting for an opponent.";
+            } else {
+                message += "an active game in progress.";
+            }
+            message += " Please complete or manage it before creating a new one.";
+            alert(message);
+        } else {
+            console.log("[AllGamesPage] No existing open/active games for user. Proceeding to ship placement.");
+            navigate('/ship-placement');
+        }
     };
 
     if (isLoading) {

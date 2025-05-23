@@ -25,7 +25,7 @@ export const Game = () => {
 	const fetchGameDetails = useCallback(async () => {
 		if (!gameId) return;
 		
-		// Only set loading state when not already loading to avoid flickering with existing data
+		// 只有在非加载状态时才设置加载状态，避免已有数据闪烁
 		if (!gameData) setIsLoading(true);
 		
 		setError(null);
@@ -56,11 +56,11 @@ export const Game = () => {
 		
 		// Set up polling for game updates
 		const pollingId = setInterval(() => {
-			// Only poll when game is active
+			// 只有当游戏活跃时才进行轮询
 			if (gameData && (gameData.status === "Active" || gameData.status === "PendingSetup" || gameData.status === "Open")) {
-				// Check if it's current user's turn or if game state needs refreshing
+				// 检查是否轮到当前用户，或者是否需要刷新游戏状态
 				const isUserTurn = gameData.turn === user?.id;
-				const needsRefresh = !isUserTurn || Date.now() - lastUpdated > 30000; // If not user's turn or no updates for over 30 seconds
+				const needsRefresh = !isUserTurn || Date.now() - lastUpdated > 30000; // 如果不是用户回合或超过30秒未更新
 				
 				if (needsRefresh) {
 					fetchGameDetails();
@@ -86,19 +86,19 @@ export const Game = () => {
 		try {
 			setIsLoading(true);
 			
-			// Determine target player
+			// 确定目标玩家ID
 			const targetPlayerId = 
 				gameData.player1._id === user.id
 					? gameData.player2._id
 					: gameData.player1._id;
 			
-			// Check if target cell has a ship (calculate hit result on frontend)
+			// 检查目标格子上是否有船只（在前端计算命中结果）
 			const targetBoard = 
 				gameData.player1._id === user.id
 					? gameData.board2_cells
 					: gameData.board1_cells;
 			
-			// Check if this position has already been attacked
+			// 检查该位置是否已被攻击过
 			if (targetBoard[y][x].isHit) {
 				setError("This cell has already been attacked. Try another cell.");
 				setIsLoading(false);
