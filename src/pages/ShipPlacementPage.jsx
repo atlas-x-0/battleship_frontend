@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Container, Row, Col, Alert, Button, Spinner } from 'react-bootstrap';
 
 import { Fleet } from '../components/Fleet';
 import { InteractivePlayerBoard } from '../components/InteractivePlayerBoard';
 import { AVAILABLE_SHIPS, SQUARE_STATE, BOARD_ROWS, BOARD_COLUMNS } from '../utils/gameConfig';
-import { createGameAPI, joinGameAPI } from '../services/apiService'; // Assuming joinGameAPI will be added
+import { createGameAPI, joinGameAPI } from '../services/apiService';
 import { useAuth } from '../contexts/AuthContext';
 
 // Helper functions (can be moved to a utility file if used elsewhere)
@@ -37,12 +37,14 @@ const validatePlacement = (board, ship, startX, startY, orientation) => {
 export const ShipPlacementPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { user, isAuthenticated } = useAuth();
+    const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
-    // Determine mode and gameIdToJoin from URL query params or route state
-    const queryParams = new URLSearchParams(location.search);
-    const mode = queryParams.get('mode') || 'create'; // 'create' or 'join'
-    const gameIdToJoin = queryParams.get('gameId');
+    // Get gameId from URL path parameters
+    const { gameId } = useParams();
+
+    // Determine mode and gameIdToJoin based on the presence of gameId from path params
+    const mode = gameId ? 'join' : 'create';
+    const gameIdToJoin = gameId;
 
     const [shipsToPlace, setShipsToPlace] = useState(
         AVAILABLE_SHIPS.map(s => ({ ...s, placed: false, position: null, orientation: 'horizontal', occupiedCells: [] }))
@@ -52,7 +54,13 @@ export const ShipPlacementPage = () => {
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    // --- Ship Placement Logic (to be migrated/refined from Game.jsx) ---
+    useEffect(() => {
+        if (!isAuthLoading && !isAuthenticated) {
+            console.log("[ShipPlacementPage] User not authenticated, redirecting to login.");
+            navigate('/login', { replace: true, state: { from: location } });
+        }
+    }, [isAuthenticated, isAuthLoading, navigate, location]);
+
     const handleChooseShip = useCallback((shipName) => {
         const shipToSelect = shipsToPlace.find(s => s.name === shipName && !s.placed);
         if (shipToSelect) {
@@ -107,7 +115,6 @@ export const ShipPlacementPage = () => {
         setError(null);
         setIsLoading(true);
 
-        // 将数据格式调整为后端期望的格式：包含 ships 和 boardCells
         const layoutData = {
             ships: shipsToPlace.map(s => ({ 
                 name: s.name,
@@ -117,36 +124,37 @@ export const ShipPlacementPage = () => {
                 occupiedCells: s.occupiedCells, 
                 sunk: false
             })),
-            boardCells: boardLayout // 添加棋盘状态数据
+            boardCells: boardLayout 
         };
 
         try {
             if (mode === 'create') {
+                console.log("[ShipPlacementPage] Mode: create. Calling createGameAPI.");
                 const newGame = await createGameAPI(layoutData); 
                 if (!newGame || !newGame._id) {
                     throw new Error("Invalid response from server when creating game");
                 }
                 navigate(`/game/${newGame._id}`);
             } else if (mode === 'join' && gameIdToJoin) {
+                console.log(`[ShipPlacementPage] Mode: join. Game ID: ${gameIdToJoin}. Calling joinGameAPI.`);
                 const joinedGame = await joinGameAPI(gameIdToJoin, layoutData); 
                 if (!joinedGame || !joinedGame._id) {
                     throw new Error("Invalid response from server when joining game");
                 }
                 navigate(`/game/${joinedGame._id}`);
             } else {
-                throw new Error("Invalid mode or missing gameId for join operation.");
+                console.error("[ShipPlacementPage] Invalid state: mode is 'join' but gameIdToJoin is missing, or mode is invalid.");
+                throw new Error("Invalid operation mode or missing game ID for join.");
             }
         } catch (err) {
             console.error(`Error during ${mode} game:`, err);
             let errorMessage = "An unexpected error occurred.";
             
-            // 处理特定类型的错误
             if (err.response) {
                 if (err.response.status === 400) {
                     errorMessage = err.response.data?.msg || "Invalid game data. Please check your ship placement.";
                 } else if (err.response.status === 401) {
                     errorMessage = "You must be logged in to perform this action.";
-                    // 重定向到登录页面
                     setTimeout(() => navigate('/login', { state: { from: location } }), 2000);
                 } else if (err.response.status === 404) {
                     errorMessage = "Game not found. It may have been deleted or never existed.";
@@ -162,22 +170,20 @@ export const ShipPlacementPage = () => {
         }
     };
 
-    useEffect(() => { // Redirect if not authenticated
-        if (!isAuthenticated) {
-            navigate('/login', { replace: true, state: { from: location } });
-        }
-    }, [isAuthenticated, navigate, location]);
-
-
-    if (!user && !isAuthenticated && !isLoading) { // If not authenticated and not loading, should have been redirected
-        return null; // Or a message, but useEffect should handle redirect
-    } 
-    // Initial loading state or if user is null but auth is still loading
-    if (isLoading && !user && !isAuthenticated) { 
+    if (isAuthLoading) {
         return (
             <Container className="text-center mt-5">
                 <Spinner animation="border" />
                 <p>Loading authentication...</p>
+            </Container>
+        );
+    }
+    
+    if (!isAuthenticated) {
+        return (
+            <Container className="text-center mt-5">
+                <Alert variant="warning">You need to be logged in to access this page.</Alert>
+                <Button onClick={() => navigate('/login', { state: { from: location } })}>Go to Login</Button>
             </Container>
         );
     }
@@ -188,7 +194,7 @@ export const ShipPlacementPage = () => {
                 <Col md={10} lg={8}>
                     <h2 className="text-center mb-4">
                         {mode === 'create' ? 'Create Your Battlefield' : 'Prepare to Join Game'}
-                        {gameIdToJoin && mode === 'join' && <small className="d-block text-muted">Joining Game ID: {gameIdToJoin}</small>}
+                        {gameIdToJoin && mode === 'join' && <small className="d-block text-muted">Joining Game ID: {gameIdToJoin.substring(0,8)}...</small>}
                     </h2>
                     {error && <Alert variant="danger">{error}</Alert>}
                     
@@ -198,7 +204,6 @@ export const ShipPlacementPage = () => {
                         currentlyPlacingShipObject={currentlyPlacing}
                         rotateShipHandler={handleRotateShip}
                         clearPlacementHandler={handleClearBoard}
-                        // confirmShipPlacementHandler is NOT passed to Fleet, it's a separate button below.
                     />
                     <InteractivePlayerBoard 
                         playerPlacementBoardLayout={boardLayout}

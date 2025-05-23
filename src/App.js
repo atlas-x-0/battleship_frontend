@@ -53,7 +53,14 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/ship-placement" element={<ProtectedRoute><ShipPlacementPage /></ProtectedRoute>} />
+          <Route 
+            path="/ship-placement/:gameId"
+            element={<ProtectedRoute><ShipPlacementPage /></ProtectedRoute>} 
+          />
+          <Route 
+            path="/ship-placement"
+            element={<ProtectedRoute><ShipPlacementPage /></ProtectedRoute>} 
+          />
         </Routes>
       </div>
     </Router>
