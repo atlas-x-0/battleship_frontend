@@ -1,0 +1,48 @@
+.board-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 30px); /* Adjust size as needed */
+    grid-template-rows: repeat(10, 30px);    /* Adjust size as needed */
+    gap: 1px;
+    border: 1px solid #ccc;
+    width: fit-content;
+    background-color: #eee;
+}
+
+.cell {
+    width: 30px; /* Match grid-template-columns/rows */
+    height: 30px;/* Match grid-template-columns/rows */
+    background-color: #fff;
+    border: 1px solid #ddd;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.8em;
+    cursor: pointer; /* Default cursor for placement board */
+}
+
+.cell.ship {
+    background-color: #777; /* Dark gray for placed ships */
+    color: white;
+}
+
+.cell.preview-valid {
+    background-color: rgba(0, 255, 0, 0.3); /* Light green transparent for valid preview */
+}
+
+.cell.preview-invalid {
+    background-color: rgba(255, 0, 0, 0.3); /* Light red transparent for invalid preview */
+    cursor: not-allowed;
+}
+
+.cell.hit {
+    background-color: red;
+}
+
+.cell.miss {
+    background-color: lightblue;
+}
+
+/* For non-interactive boards, you might want to remove cursor: pointer */
+.player-board:not(.interactive-board) .cell {
+    cursor: default;
+} 
