@@ -86,49 +86,30 @@ export const GameView = ({
     
     // 如果数据不可用，创建默认空棋盘
     if (!myBoardCells.length) {
-        myBoardCells = Array(10).fill(null).map(() => Array(10).fill({ state: SQUARE_STATE.empty }));
+        myBoardCells = Array(10).fill(null).map(() => Array(10).fill({ status: SQUARE_STATE.empty })); // Ensure default cell has status
     }
     if (!opponentBoardCellsForDisplay.length) {
-        opponentBoardCellsForDisplay = Array(10).fill(null).map(() => Array(10).fill({ state: SQUARE_STATE.empty }));
+        opponentBoardCellsForDisplay = Array(10).fill(null).map(() => Array(10).fill({ status: SQUARE_STATE.empty })); // Ensure default cell has status
     }
 
-    // 准备对手棋盘的显示视图 - 隐藏未命中的船只
+    // 准备对手棋盘的显示视图 - 直接使用后端 status，并在 OpponentBoardDisplay 中处理显示逻辑
     const opponentViewCells = opponentBoardCellsForDisplay.map(row => 
         row.map(cell => {
-            // 如果格子有船且未被命中，则在对手视图中显示为空
-            if (cell.isShip && !cell.isHit) {
-                return { state: SQUARE_STATE.empty };
+            // OpponentBoardDisplay expects a 'state' property. 
+            // We map backend's 'status' to 'state'.
+            // If the cell status is 'ship' (unhit ship part), display as 'empty' on opponent's board.
+            if (cell.status === 'ship') {
+                return { state: SQUARE_STATE.empty }; 
             }
-            // 如果格子有船且已被命中，则显示为命中
-            if (cell.isShip && cell.isHit) {
-                return { state: SQUARE_STATE.hit };
-            }
-            // 如果格子没有船但已被命中，则显示为未命中
-            if (!cell.isShip && cell.isHit) {
-                return { state: SQUARE_STATE.miss };
-            }
-            // 其他情况显示为空
-            return { state: SQUARE_STATE.empty };
+            return { state: cell.status }; // For 'hit', 'miss', 'empty'
         })
     );
     
-    // 准备我的棋盘的显示视图
+    // 准备我的棋盘的显示视图 - 直接使用后端 status
     const myViewCells = myBoardCells.map(row => 
         row.map(cell => {
-            // 如果格子有船且未被命中，则显示为船
-            if (cell.isShip && !cell.isHit) {
-                return { state: SQUARE_STATE.ship };
-            }
-            // 如果格子有船且已被命中，则显示为命中
-            if (cell.isShip && cell.isHit) {
-                return { state: SQUARE_STATE.hit };
-            }
-            // 如果格子没有船但已被命中，则显示为未命中
-            if (!cell.isShip && cell.isHit) {
-                return { state: SQUARE_STATE.miss };
-            }
-            // 其他情况显示为空
-            return { state: SQUARE_STATE.empty };
+            // StaticPlayerBoard also expects a 'state' property.
+            return { state: cell.status }; // 'ship', 'hit', 'miss', 'empty'
         })
     );
 

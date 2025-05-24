@@ -31,9 +31,15 @@ export const Game = () => {
 		setError(null);
 		try {
 			const data = await getGameDetailsAPI(gameId);
+			console.log("Fetched gameData from API:", JSON.stringify(data, null, 2)); // Log the entire game data
+			if (data.ships1) {
+                console.log("Fetched ships1 from API:", JSON.stringify(data.ships1, null, 2));
+            }
+            if (data.ships2) {
+                console.log("Fetched ships2 from API:", JSON.stringify(data.ships2, null, 2));
+            }
 			setGameData(data);
 			setLastUpdated(Date.now());
-			console.log("Fetched gameData:", data);
 		} catch (err) {
 			console.error("Failed to fetch game details:", err);
 			setError(err.response?.data?.msg || err.message || "Failed to load game data.");
@@ -86,72 +92,76 @@ export const Game = () => {
 		try {
 			setIsLoading(true);
 			
-			// 确定目标玩家ID
 			const targetPlayerId = 
 				gameData.player1._id === user.id
 					? gameData.player2._id
 					: gameData.player1._id;
 			
-			// 检查目标格子上是否有船只（在前端计算命中结果）
 			const targetBoard = 
 				gameData.player1._id === user.id
-					? gameData.board2_cells
-					: gameData.board1_cells;
+					? gameData.board2_cells // This is from backend, cells have { status: '...' }
+					: gameData.board1_cells; // This is from backend, cells have { status: '...' }
 			
-			// 检查该位置是否已被攻击过
-			if (targetBoard[y][x].isHit) {
+			// Check if this cell has already been attacked based on its status
+			const currentCellStatus = targetBoard[y][x].status;
+			if (currentCellStatus === 'hit' || currentCellStatus === 'miss') {
 				setError("This cell has already been attacked. Try another cell.");
 				setIsLoading(false);
 				return;
 			}
 			
-			// 判断是否命中
-			const hit = targetBoard[y][x].isShip;
+			// Determine if the attack is a hit based on the original status of the cell
+			// A hit occurs if the cell's status was 'ship' (an unattacked part of a ship)
+			const hit = currentCellStatus === 'ship';
 			
-			// 获取目标玩家的船只列表
 			const targetShips = 
 				gameData.player1._id === user.id
 					? gameData.ships2
 					: gameData.ships1;
 			
-			// 检查是否击沉船只
 			let sunkShipName = null;
 			let allPlayerShipsSunk = false;
 			
 			if (hit) {
-				// 创建一个包含攻击后状态的棋盘副本
-				const boardCopy = JSON.parse(JSON.stringify(targetBoard));
-				boardCopy[y][x].isHit = true;
+				// Create a temporary copy of the board to simulate the hit for sunk ship calculation
+				const boardCopy = JSON.parse(JSON.stringify(targetBoard)); 
+				boardCopy[y][x].status = 'hit'; // Mark the current attack as a hit in the copy
 				
-				// 检查每艘船是否被击沉
 				for (const ship of targetShips) {
-					if (ship.sunk) continue;
+					if (ship.sunk) continue; // Skip already sunk ships
 					
-					// 检查该船所有格子是否都被命中
-					const allCellsHit = ship.occupiedCells.every(cell => {
-						// 当前攻击的格子
-						if (cell.x === x && cell.y === y) return true;
-						// 检查棋盘上的格子是否被命中
-						return boardCopy[cell.y][cell.x].isHit;
+					// occupiedCells should exist on each ship object from the backend if needed here
+					// If not, this logic needs adjustment or ship.occupiedCells must be populated correctly from backend/initial placement
+					const shipCells = ship.occupiedCells || []; // Fallback to empty array if not present
+					const allCellsHit = shipCells.every(occupied_cell => {
+						if (occupied_cell.x === x && occupied_cell.y === y) return true; // Current attack cell is a hit
+						// Check the status in our temporary board copy
+						return boardCopy[occupied_cell.y][occupied_cell.x].status === 'hit';
 					});
 					
-					if (allCellsHit) {
+					if (allCellsHit && shipCells.length > 0) { // Ensure ship has cells to be considered sunk
 						sunkShipName = ship.name;
-						break;
+						// Simulate this ship being sunk for the allPlayerShipsSunk check
+						const tempTargetShips = JSON.parse(JSON.stringify(targetShips));
+						const shipInTemp = tempTargetShips.find(s => s.name === sunkShipName);
+						if(shipInTemp) shipInTemp.sunk = true;
+						allPlayerShipsSunk = tempTargetShips.every(s => s.sunk);
+						break; // Found the sunk ship for this attack
 					}
 				}
-				
-				// 检查是否所有船只都被击沉
-				const sunkShipsAfterThisAttack = [...targetShips]
-					.map(ship => {
-						if (ship.name === sunkShipName) return {...ship, sunk: true};
-						return ship;
-					});
-				
-				allPlayerShipsSunk = sunkShipsAfterThisAttack.every(ship => ship.sunk);
+				// If no specific ship was sunk by this hit, check if this hit completes sinking of all ships
+				if (!sunkShipName) {
+				    const tempTargetShips = JSON.parse(JSON.stringify(targetShips));
+				    allPlayerShipsSunk = tempTargetShips.every(ship => {
+				        if (ship.sunk) return true;
+				        return (ship.occupiedCells || []).every(occupied_cell => {
+				            if (occupied_cell.x === x && occupied_cell.y === y) return true;
+				            return boardCopy[occupied_cell.y][occupied_cell.x].status === 'hit';
+				        });
+				    });
+				}
 			}
 			
-			// 准备发送到服务器的数据
 			const attackDataPayload = {
 				targetPlayerId,
 				coordinates: { x, y },

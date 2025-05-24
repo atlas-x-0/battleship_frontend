@@ -119,13 +119,19 @@ export const ShipPlacementPage = () => {
             ships: shipsToPlace.map(s => ({ 
                 name: s.name,
                 length: s.length,
-                position: s.position,
+                position: s.position,       // Position of the head of the ship
                 orientation: s.orientation,
-                occupiedCells: s.occupiedCells, 
+                occupiedCells: s.occupiedCells, // Array of {x, y} for all cells the ship occupies
                 sunk: false
             })),
-            boardCells: boardLayout 
+            boardCells: boardLayout.map(row =>
+                row.map(cell => ({
+                    isShip: cell.state === SQUARE_STATE.ship,
+                }))
+            )
         };
+
+        console.log("[ShipPlacementPage] Layout data being sent to backend:", JSON.stringify(layoutData, null, 2));
 
         try {
             if (mode === 'create') {
